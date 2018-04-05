@@ -1,0 +1,140 @@
+
+
+I think my fundamental difficulty is I don't know how to construct an expr.lam.
+e.g., if I have f : \nat \to \nat, how to I construct the expr for \lambda n, f (n+1)?
+
+ 10:45 AM
+
+meta def mk_iff_mp_app (iffmp : name) : expr → (nat → expr) → tactic expr
+| (expr.pi n bi e t) f := expr.lam n bi e <$> mk_iff_mp_app t (λ n, f (n+1) (expr.var n))
+| `(%%a ↔ %%b) f := pure $ @expr.const tt iffmp [] a b (f 0)
+| _ f := fail "Target theorem must have the form `Π x y z, a ↔ b`"
+
+
+
+That tactic directly constructs a proof of \forall x y z, a -> b from \forall x y z, a <-> b
+
+So how does expr.var work?
+
+expr.var is a de bruijn variable
+
+so \forall x y z, x = y becomes roughly pi "x" (pi "y" (pi "z" (app (app (const "eq") (var 2)) (var 1)))
+
+the number counts how many binders back the variable is
+
+Also, I don't think you will be able to use mk_eq_symm in the function
+
+What will go wrong with mk_eq_symm?
+
+because when you are working on an expr manually like this, you have to deal with open terms, and tactics don't like open terms
+10:55 AM
+
+open meaning containing an unbound var
+
+Thank you all! Things are looking good here. :-) all_rewrites seems to be working, finding lots of rewrites that rw itself can't see.
+
+It's probably slow as molasses ... but that's a different problem.
+
+meta def mk_eq_symm_under_binders_aux : expr → (nat → expr) → tactic expr
+| (expr.pi n bi d b) f := expr.lam n bi d <$> mk_eq_symm_under_binders_aux b (λ n, f (n+1) (expr.var n))
+| `(%%a = %%b) e := mk_eq_symm (e 0)
+| _ _ := fail "expression must have the form `Π x y z, a = b`"
+
+meta def mk_eq_symm_under_binders : expr → tactic expr
+| e := do t ← infer_type e, mk_eq_symm_under_binders_aux t (λ _, e)
+
+That's just the mk_eq_symm_under_binders part.
+
+Then there's
+
+meta def rewrite_entire (r : (expr × bool)) (e : expr) : tactic (expr × expr) :=
+do let sl := simp_lemmas.mk,
+   r' ← if r.2 then mk_eq_symm_under_binders r.1 else pure r.1,
+   sl ← sl.add r',
+   sl.rewrite e
+
+which given r, a rule and a bool flag indicating whether to use the rule in reverse, and an expression e, either rewrite the entire expression e using the rule, returning the replacement and the proof, or fails.
+
+
+***********************************************
+
+Mario once said to look at the tactic code for "assumption".
+
+***
+
+Scott tactic code:
+
+
+meta inductive expr_lens
+| app_fun : expr_lens → expr → expr_lens
+| app_arg : expr_lens → expr → expr_lens
+| entire  : expr_lens
+
+open expr_lens
+
+meta def expr_lens.replace : expr_lens → expr → expr
+| (app_fun l f) x := expr_lens.replace l (expr.app f x)
+| (app_arg l x) f := expr_lens.replace l (expr.app f x)
+| entire        e := e 
+
+meta def expr_lens.congr : expr_lens → expr → tactic expr
+| (app_fun l f) x_eq := do fx_eq ← mk_congr_arg f x_eq,
+                                    expr_lens.congr l fx_eq
+| (app_arg l x) f_eq := do fx_eq ← mk_congr_fun f_eq x,
+                                    expr_lens.congr l fx_eq
+| entire                  e_eq := pure e_eq
+
+meta def rewrite_fold_aux {α} (F : expr_lens → expr → α → tactic α) : expr_lens → expr → α → tactic α 
+| l e a := (do a' ← F l e a,
+              match e with
+              | (expr.app f x) := do a_f ← rewrite_fold_aux (expr_lens.app_arg l x) f a',
+                                            rewrite_fold_aux (expr_lens.app_fun l f) x a_f
+              | _ := pure a'
+              end) <|> pure a
+. 
+
+meta def rewrite_fold {α} (F : expr_lens → expr → α → tactic α) (e : expr) (a : α) : tactic α := rewrite_fold_aux F expr_lens.entire e a
+
+meta def rewrite_F (r : expr × bool) (l : expr_lens) (e : expr) (state : list (expr × expr)) : tactic (list (expr × expr)) := 
+do 
+  e_pp ← pretty_print e,
+  r_pp ← pretty_print r.1,
+  let r_pp := (if r.2 then "← " else "") ++ r_pp,
+  -- tactic.trace format!"rewriting at {e_pp} via {r_pp}",
+  (v, pr) ← rewrite_without_new_mvars r.1 e {symm := r.2},
+  -- Now we determine whether the rewrite transforms the entire expression or not:
+  (do 
+    (w, qr) ← rewrite_entire r e,
+    w_pp ← pretty_print w,
+    -- tactic.trace format!"success (entire expression): {w_pp}",
+    let w' := l.replace w,
+    qr' ← l.congr qr | (do w_pp ← pretty_print w, qr_pp ← pretty_print qr, tactic.trace format!"lens congr failed: {w_pp} {qr_pp}"),
+    -- tactic.trace "..",
+    pure ((w', qr') :: state)
+  ) <|>
+  (do
+    v_pp ← pretty_print v,
+    -- tactic.trace format!"success (subexpression): {v_pp}",
+    -- tactic.trace ".",
+    pure (state)
+  )
+
+def remove_adjacent_duplicates {α β} (f : α → β) [decidable_eq β] : list α → list α
+| (x :: y :: t) := if f x = f y then
+                     remove_adjacent_duplicates (y :: t)
+                   else
+                     x :: (remove_adjacent_duplicates (y :: t))
+| [x] := [x]
+| [] := []
+
+meta def all_rewrites (r : expr × bool) (e : expr) : tactic (list (expr × expr)) :=
+do 
+  --  pp ← pretty_print e,
+   results ← rewrite_fold (rewrite_F r) e [],
+   let results : list (expr × expr) := remove_adjacent_duplicates (λ p, p.1) results,
+  --  results_pp ← results.mmap(λ p, pretty_print p.1),
+  --  r_pp ← pretty_print r.1,
+  --  let r_pp := (if r.2 then "← " else "") ++ r_pp,
+  --  tactic.trace format!"⟫ finding all rewrites of {pp} via {r_pp}",
+  --  results_pp.mmap'(λ r, tactic.trace format!"⟫⟫ {r}"),
+pure results

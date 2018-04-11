@@ -33,7 +33,7 @@ with a comma at the end), and then to start filling in the sorries after that. (
 # Using operators other than equality.
 
 Many of the basic examples in TPIL use equality for most or all of
-the operators, but actually `calc` will work with any relation tagged [trans]:
+the operators, but actually `calc` will work with any relation tagged `[trans]`:
 
 ```lean
 definition r : ℕ → ℕ → Prop := sorry 
@@ -76,8 +76,8 @@ U < Y
 ```
 
 Note the following subtlety: given `U op1 V` and `V op2 W` Lean
-has to conclude `U op3 W` for some operator, which might be op1
-or op2 (or even, as we shall see, a new operator). How is Lean
+has to conclude `U op3 W` for some operator, which might be `op1`
+or `op2` (or even, as we shall see, a new operator). How is Lean
 doing this? The easiest case is when one of `op1` and `op2`
 is `=`. Lean knows
 
@@ -112,3 +112,5 @@ example (a b c : ℕ) (H1 : a *** b) (H2 : b &&& c) : a %%% c :=
 calc a *** b : H1
 ...    &&& c : H2
 ```
+
+This example shows us that the third operator `op3` can be different to both `op1` and `op2`.

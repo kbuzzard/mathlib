@@ -33,7 +33,8 @@ with a comma at the end), and then to start filling in the sorries after that. (
 # Using operators other than equality.
 
 Many of the basic examples in TPIL use equality for most or all of
-the operators, but actually `calc` will work with any relation tagged `[trans]`:
+the operators, but actually `calc` will work with any relation for which
+the corresponding transitivity statement is tagged `[trans]`:
 
 ```lean
 definition r : ℕ → ℕ → Prop := sorry 

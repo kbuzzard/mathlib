@@ -1,0 +1,25 @@
+from manual:
+
+***
+
+notation `[` a `**` b `]` := a * b + 1
+
+def mul_square (a b : ℕ) := a * a * b * b
+
+infix `<*>`:50 := mul_square
+
+#reduce [2 ** 3]
+#reduce 2 <*> 3
+
+***
+
+From Chris Hughes binomial theorem:
+
+import algebra.big_operators data.real.cau_seq tactic.ring algebra.archimedean data.nat.choose analysis.limits
+
+open nat is_absolute_value
+
+variables {α : Type*} {β : Type*} (f g : ℕ → α) (n m : ℕ)
+
+local infix `^` := monoid.pow
+local notation f ` ∑ ` : 90 n : 90  := finset.sum (finset.range n) f

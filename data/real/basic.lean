@@ -6,12 +6,19 @@ Authors: Mario Carneiro
 The (classical) real numbers ℝ. This is a direct construction
 from Cauchy sequences.
 -/
-import order.conditionally_complete_lattice data.real.cau_seq algebra.big_operators algebra.archimedean
+import order.conditionally_complete_lattice data.real.cau_seq algebra.archimedean
+import algebra.big_operators
 
-def real := quotient (@cau_seq.equiv ℚ _ _ _ abs _)
+/-- The `real` type is Lean's representation of the real numbers,
+    implemented as Cauchy sequences of rationals modulo the ideal of null sequences -/
+def real := @quotient (cau_seq ℚ abs) cau_seq.equiv
+
 notation `ℝ` := real
 
+-- Now about 24 lines of CS infrastructure stuff
+
 namespace real
+
 open rat cau_seq
 
 def mk : cau_seq ℚ abs → ℝ := quotient.mk
@@ -33,6 +40,11 @@ theorem of_rat_one : of_rat 1 = 1 := rfl
 by have : mk f = 0 ↔ lim_zero (f - 0) := quotient.eq;
    rwa sub_zero at this
 
+/- The reals are a quotient type, so to define addition we choose
+   representatives (Cauchy sequences) and add them  with  `mk (f + g)`.
+   Automation (simp) takes care of the proof that this descends to equivalence
+   classes, given the hint `add_lim_zero : lim_zero f → lim_zero g → lim_zero (f + g)`
+-/
 instance : has_add ℝ :=
 ⟨λ x y, quotient.lift_on₂ x y (λ f g, mk (f + g)) $
   λ f₁ g₁ f₂ g₂ hf hg, quotient.sound $
@@ -40,6 +52,9 @@ instance : has_add ℝ :=
 
 @[simp] theorem mk_add (f g : cau_seq ℚ abs) : mk f + mk g = mk (f + g) := rfl
 
+#check @neg_lim_zero
+/- neg is defined as neg on Cauchy sequences, and `neg_lim_zero : lim_zero f → lim_zero (-f)`
+   is the hint that automation needs. -/
 instance : has_neg ℝ :=
 ⟨λ x, quotient.lift_on x (λ f, mk (-f)) $
   λ f₁ f₂ hf, quotient.sound $
@@ -47,6 +62,10 @@ instance : has_neg ℝ :=
 
 @[simp] theorem mk_neg (f : cau_seq ℚ abs) : -mk f = mk (-f) := rfl
 
+/- mul is a little more complicated. The proof that multiplication on Cauchy sequences
+   descends but Lean is told to use the fact that g₁*(f₁-f₂)+f₂*(g₁-g₂) tends to zero
+   and also some of the ring algorithms that simp does not by default use, for performance
+   reasons-/
 instance : has_mul ℝ :=
 ⟨λ x y, quotient.lift_on₂ x y (λ f g, mk (f * g)) $
   λ f₁ g₁ f₂ g₂ hf hg, quotient.sound $
@@ -55,6 +74,8 @@ instance : has_mul ℝ :=
 
 @[simp] theorem mk_mul (f g : cau_seq ℚ abs) : mk f * mk g = mk (f * g) := rfl
 
+-- these next lines check that the map from the rationals to the reals
+-- respects add, neg and mul.
 theorem of_rat_add (x y : ℚ) : of_rat (x + y) = of_rat x + of_rat y :=
 congr_arg mk (const_add _ _)
 
@@ -64,6 +85,12 @@ congr_arg mk (const_neg _)
 theorem of_rat_mul (x y : ℚ) : of_rat (x * y) = of_rat x * of_rat y :=
 congr_arg mk (const_mul _ _)
 
+-- This is a really good example of the power of automation combined with
+-- the flexibility of Lean. Notation is attached to the functions like 
+-- addition and constants like 1, which have already been defined above.
+-- Then the job of proving the axioms of a ring is passed to a sequence of
+-- tactics which first reduces each axiom to a question on the space of Cauchy sequencess
+-- and then solves it with the simp tactic and additional hints.
 instance : comm_ring ℝ :=
 by refine { neg := has_neg.neg,
     add := (+), zero := 0, mul := (*), one := 1, .. };
@@ -81,6 +108,7 @@ instance : add_group ℝ      := by apply_instance
 instance : add_comm_group ℝ := by apply_instance
 instance : ring ℝ           := by apply_instance
 
+-- we only get access to subtraction notation after proving the reals formed the ring.
 theorem of_rat_sub (x y : ℚ) : of_rat (x - y) = of_rat x - of_rat y :=
 congr_arg mk (const_sub _ _)
 
@@ -435,9 +463,9 @@ end,
   have S0 : 0 < Sup S := lt_of_lt_of_le x0 (le_Sup _ ⟨_, ub⟩ lb),
   refine ⟨Sup S, S0, le_antisymm (not_lt.1 $ λ h, _) (not_lt.1 $ λ h, _)⟩,
   { rw [← div_lt_iff S0, lt_Sup S ⟨_, lb⟩ ⟨_, ub⟩] at h,
-    rcases h with ⟨y, yS, hy⟩, rcases yS with ⟨y0, yx⟩,
+    rcases h with ⟨y, ⟨y0, yx⟩, hy⟩,
     rw [div_lt_iff S0, ← div_lt_iff' y0, lt_Sup S ⟨_, lb⟩ ⟨_, ub⟩] at hy,
-    rcases hy with ⟨z, zS, hz⟩, rcases zS with ⟨z0, zx⟩,
+    rcases hy with ⟨z, ⟨z0, zx⟩, hz⟩,
     rw [div_lt_iff y0] at hz,
     exact not_lt_of_lt
       ((mul_lt_mul_right y0).1 (lt_of_le_of_lt yx hz))
@@ -489,7 +517,7 @@ classical.some (sqrt_exists (le_max_left 0 x))
     rcases sqrt_aux_converges g with ⟨hg, y, y0, yg, ys⟩,
     refine xs.trans (eq.trans _ ys.symm),
     rw [← @mul_self_inj_of_nonneg ℝ _ x y x0 y0, xf, yg],
-    congr_n 1, exact quotient.sound e
+    congr' 1, exact quotient.sound e
   end)-/
 
 theorem sqrt_prop (x : ℝ) : 0 ≤ sqrt x ∧ sqrt x * sqrt x = max 0 x :=

@@ -61,3 +61,14 @@ match m with
 end
 ```
 
+You can match several things if you get the commas right
+
+```lean
+def foo (n : ℕ) (b c : bool) :=
+5 + match n - 5, b && c with
+    | 0,      tt := 0
+    | m+1,    tt := m + 7
+    | 0,      ff := 5
+    | m+1,    ff := m + 3
+    end
+```

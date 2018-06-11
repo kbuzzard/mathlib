@@ -126,6 +126,7 @@ We then define ``u`` to be a new universe, and then we seem to be making sure th
 
 Once we have ``⟨α, u, c⟩`` set up to our satisfaction, we then create our instance of ``tactic.ring.cache`` a.k.a. ``cache``, and return it via the ``return`` command, which ensures it ends up as type ``tactic cache``.
 
+KB STOPPED HERE
 
 .. code-block:: lean
    

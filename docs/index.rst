@@ -11,7 +11,7 @@ Contents:
 .. toctree::
    :maxdepth: 2
 
-   tactics
+   ring_tactic
 
 Indices and tables
 ==================

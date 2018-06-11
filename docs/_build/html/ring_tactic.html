@@ -1,0 +1,628 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>How does the ring tactic work? &mdash; lean-docs 1.0 documentation</title>
+    
+    <link rel="stylesheet" href="_static/alabaster.css" type="text/css" />
+    <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    './',
+        VERSION:     '1.0',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="_static/jquery.js"></script>
+    <script type="text/javascript" src="_static/underscore.js"></script>
+    <script type="text/javascript" src="_static/doctools.js"></script>
+    <script type="text/javascript" src="https://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML"></script>
+    <link rel="top" title="lean-docs 1.0 documentation" href="index.html" />
+    <link rel="prev" title="Welcome to lean-docs’s documentation!" href="index.html" />
+   
+  
+  <meta name="viewport" content="width=device-width, initial-scale=0.9, maximum-scale=0.9" />
+
+  </head>
+  <body role="document">  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body" role="main">
+            
+  <div class="section" id="how-does-the-ring-tactic-work">
+<span id="tactics"></span><h1>How does the <code class="docutils literal"><span class="pre">ring</span></code> tactic work?<a class="headerlink" href="#how-does-the-ring-tactic-work" title="Permalink to this headline">¶</a></h1>
+<p>This page is in two parts. The first part is an extremely brief introduction
+to what tactics are and what they do. For a far fuller introduction,
+see <a class="reference external" href="https://leanprover.github.io/programming_in_lean/programming_in_lean.pdf">Programming In Lean</a> . The second part is an attempt to document mathlib&#8217;s <cite>ring</cite> tactic, or, more precisely, the file <a class="reference external" href="https://github.com/leanprover/mathlib/blob/master/tactic/ring.lean">tactic/ring.html</a> in mathlib (to be completely exacy: this document currently uses commit <cite>d5c73c0b372d1181ca386e3264497e2c56077d93</cite> of the file).</p>
+</div>
+<div class="section" id="part-i-the-bare-minimum-about-monad-mode">
+<h1>Part I : the bare minimum about monad mode<a class="headerlink" href="#part-i-the-bare-minimum-about-monad-mode" title="Permalink to this headline">¶</a></h1>
+<p>Access to a working copy of Lean whilst reading would probably be helpful, if you&#8217;re learning this stuff for the first time.</p>
+<div class="section" id="the-option-monad">
+<h2>The <cite>option</cite> monad<a class="headerlink" href="#the-option-monad" title="Permalink to this headline">¶</a></h2>
+<p><code class="docutils literal"><span class="pre">option</span></code> is just an inductive type. It&#8217;s defined like this, right in the heart of core lean (type <code class="docutils literal"><span class="pre">#check</span> <span class="pre">option</span></code> and right click on <code class="docutils literal"><span class="pre">option</span></code> to see yourself).</p>
+<div class="highlight-lean"><div class="highlight"><pre><span class="kn">inductive</span> <span class="n">option</span> <span class="o">(</span><span class="n">α</span> <span class="o">:</span> <span class="kt">Type</span> <span class="n">u</span><span class="o">)</span>
+<span class="bp">|</span> <span class="n">none</span> <span class="o">{}</span> <span class="o">:</span> <span class="n">option</span>
+<span class="bp">|</span> <span class="n">some</span> <span class="o">(</span><span class="n">val</span> <span class="o">:</span> <span class="n">α</span><span class="o">)</span> <span class="o">:</span> <span class="n">option</span>
+</pre></div>
+</div>
+<p>So if <code class="docutils literal"><span class="pre">α</span></code> is a type, then <code class="docutils literal"><span class="pre">option</span> <span class="pre">α</span></code> is another type which is basically  <code class="docutils literal"><span class="pre">α</span></code> plus one extra element called <code class="docutils literal"><span class="pre">none</span></code>. A better name for <code class="docutils literal"><span class="pre">none</span></code> as far as we are concerned would be <code class="docutils literal"><span class="pre">failed</span></code>. If <code class="docutils literal"><span class="pre">a</span> <span class="pre">:</span> <span class="pre">α</span></code> then <code class="docutils literal"><span class="pre">some</span> <span class="pre">a</span></code> is the corresponding term of type <code class="docutils literal"><span class="pre">option</span> <span class="pre">α</span></code>.</p>
+<p>I won&#8217;t go into a formal definition of what a monad is, but <code class="docutils literal"><span class="pre">option</span></code> is a monad, which means that it has some nice properties. For example, even though a function isn&#8217;t a type, we can kind-of take <code class="docutils literal"><span class="pre">option</span></code> of a function. If <code class="docutils literal"><span class="pre">f</span> <span class="pre">:</span> <span class="pre">α</span> <span class="pre">→</span> <span class="pre">β</span></code> then there&#8217;s an obvious map <code class="docutils literal"><span class="pre">option</span> <span class="pre">α</span> <span class="pre">→</span> <span class="pre">option</span> <span class="pre">β</span></code> sending <code class="docutils literal"><span class="pre">some</span> <span class="pre">a</span></code> to <code class="docutils literal"><span class="pre">some</span> <span class="pre">(f</span> <span class="pre">a)</span></code> and <code class="docutils literal"><span class="pre">none</span></code> to <code class="docutils literal"><span class="pre">none</span></code>. Slightly more subtly, there&#8217;s a map <code class="docutils literal"><span class="pre">option</span> <span class="pre">α</span> <span class="pre">×</span> <span class="pre">option</span> <span class="pre">β</span> <span class="pre">→</span> <span class="pre">option</span> <span class="pre">(α</span> <span class="pre">×</span> <span class="pre">β)</span></code>, which, for example, sends <code class="docutils literal"><span class="pre">(none,b)</span></code> to <code class="docutils literal"><span class="pre">none</span></code>. The idea is &#8211; if something failed, then we&#8217;ve failed.</p>
+</div>
+<div class="section" id="the-tactic-monad">
+<h2>The <cite>tactic</cite> monad<a class="headerlink" href="#the-tactic-monad" title="Permalink to this headline">¶</a></h2>
+<p><code class="docutils literal"><span class="pre">tactic</span></code> is just <code class="docutils literal"><span class="pre">option</span></code> with some variables and stuff. Why <code class="docutils literal"><span class="pre">option</span></code>? We&#8217;ve all seen tactics fail &#8211; for example the squiggly red line you get under a <code class="docutils literal"><span class="pre">rw</span></code> when Lean can&#8217;t find the thing it&#8217;s supposed to be rewriting, is a tactic failing. Here&#8217;s an extremely simplistic (and actually slightly incorrect) way to think about what a tactic is doing. The tactic is given a job to do, as an input, for example &#8220;here&#8217;s this goal &#8211; can you try to simplify it?&#8221;, and then the output of the tactic should be a simplified goal. However what if the tactic can&#8217;t do what it is told to do? There are many reasons this might happen. For example what if <code class="docutils literal"><span class="pre">simp</span></code> finds that the goal can&#8217;t be simplified, or <code class="docutils literal"><span class="pre">rw</span></code> can&#8217;t find any instances of the thing it is supposed to be rewriting? What if the tactic had a bug? (this can happen, we&#8217;ll say more about this later and why we don&#8217;t have to worry about Lean proving <code class="docutils literal"><span class="pre">false</span></code> because of a buggy tactic).</p>
+<p>Because we want to let a tactic have the possibility of failing, the output of a tactic is not something like a term or a goal, it&#8217;s going to be of the form <code class="docutils literal"><span class="pre">option</span> <span class="pre">expr</span></code> or something like this, where <code class="docutils literal"><span class="pre">expr</span></code> is an expression, and <code class="docutils literal"><span class="pre">option</span></code> gives it the chance to return &#8220;I failed&#8221;.</p>
+<p>I learnt a lot about Lean once I realised how easy it was to examine everything &#8211; you just had to know where to look. The usual tactics which you use when writing in tactic mode are all in <code class="docutils literal"><span class="pre">tactic.interactive</span></code>. So, for example, to see the type of the underlying function that is run when you type <code class="docutils literal"><span class="pre">simp</span></code> in tactic mode, you can type</p>
+<div class="highlight-lean"><div class="highlight"><pre><span class="bp">#</span><span class="kn">check</span> <span class="n">tactic</span><span class="bp">.</span><span class="n">interactive</span><span class="bp">.</span><span class="n">simp</span>
+</pre></div>
+</div>
+<p>and similarly for other tactics like <code class="docutils literal"><span class="pre">rw</span></code> and <code class="docutils literal"><span class="pre">unfold</span></code> and so on. Of course it mostly looks like gobble-de-gook if you don&#8217;t know anything about tactics, but note that the output will almost certainly be of the form <code class="docutils literal"><span class="pre">tactic</span> <span class="pre">unit</span></code>. As you might well know, <code class="docutils literal"><span class="pre">unit</span></code> is an inductive type with just one term, <code class="docutils literal"><span class="pre">unit.star</span></code>. So where are all the goals and things which the tactic just changed? They&#8217;re all stored as variables within the tactic monad, using tricks explained in section 7.3 of <a class="reference external" href="https://leanprover.github.io/programming_in_lean/programming_in_lean.pdf">Programming In Lean</a> .</p>
+</div>
+<div class="section" id="writing-a-tactic">
+<h2>Writing a tactic<a class="headerlink" href="#writing-a-tactic" title="Permalink to this headline">¶</a></h2>
+<p>There are examples in <a class="reference external" href="https://leanprover.github.io/programming_in_lean/programming_in_lean.pdf">Programming In Lean</a> . But I just want to briefly introduce &#8220;monad mode&#8221;, which you enter with the command <code class="docutils literal"><span class="pre">do</span></code>. Just as <code class="docutils literal"><span class="pre">by</span></code> or <code class="docutils literal"><span class="pre">begin</span> <span class="pre">..</span> <span class="pre">end</span></code> put you into tactic mode and <code class="docutils literal"><span class="pre">calc</span></code> puts you into calc mode (I think these modes are called &#8220;environments&#8221;), <code class="docutils literal"><span class="pre">do</span></code> puts you into monad mode, where you have access to a bunch of variables such as the goal and hypotheses &#8211; this is where they&#8217;re stored.</p>
+<p>One very funny thing about tactic mode is that we are allowed to fail, so we can write code which looks much more like procedural code. The problem is that things get a bit more complicated. Lots of things are <code class="docutils literal"><span class="pre">tactic</span></code> this or <code class="docutils literal"><span class="pre">tactic</span></code> that, but not everything is like this, pretty much all functions return <code class="docutils literal"><span class="pre">tactic</span> <span class="pre">something</span></code> but you also sometimes want access to normal functions, and the notation used to informally switch between the tactic and non-tactic objects looks a bit scary at first:</p>
+<div class="highlight-lean"><div class="highlight"><pre>meta def mk_cache (e : expr) : tactic cache :=
+do α ← infer_type e,
+   c ← mk_app ``comm_semiring [α] &gt;&gt;= mk_instance,
+   u ← mk_meta_univ,
+   infer_type α &gt;&gt;= unify (expr.sort (level.succ u)),
+   u ← get_univ_assignment u,
+   return ⟨α, u, c⟩
+</pre></div>
+</div>
+<p>This code block is from very early on in <code class="docutils literal"><span class="pre">tactic/ring.lean</span></code> and the first goal of this document is to convince people that this code is actually really easy to <em>read</em>. I am not suggesting that people will be writing their own tactics at the end of this, but I am suggesting that actually reading tactic code might not be impossible, especially if one does it within Lean (thus gaining the ability to hover over or click on functions and see their type, definition and so on).</p>
+<p>I want to end Part 1 as quickly as possible so we can get to this code in Part IIand take a look at it. But one important thing I want to mention before we do is that ultimately a Lean tactic is more than just an algorithm which solves a task. For example a tactic which sorts a list of nats is more than a python program which sorts a list of nats &#8211; the Lean tactic has to both sort the list, and then, for the output to be useful, it has to return proofs that (a) the new list is some re-arranged version of the old list and (b) the new list is in order. To give another example &#8211; <code class="docutils literal"><span class="pre">simp</span></code> does not just produce a new goal from an old one via some hack &#8211; it has to also prove that if we can prove our new goal then we can deduce the old one. The Lean tactic has to be both an algorithm, <em>and</em> a proof that the algorithm works. This is why writing Lean tactics is harder than writing python code.</p>
+<p>Is it the case that one can separate the algorithm and the proof into two different problems? I don&#8217;t really know yet, but probably if I keep reading <code class="docutils literal"><span class="pre">tactic/ring.lean</span></code> I might begin to get an inkling. So let&#8217;s end part 1 here and go straight into the <code class="docutils literal"><span class="pre">tactic/ring.lean</span></code> code and see if we can make some sense of the first 30 lines of it.</p>
+</div>
+</div>
+<div class="section" id="part-ii-tactic-ring-lean">
+<h1>Part II : <code class="docutils literal"><span class="pre">tactic/ring.lean</span></code><a class="headerlink" href="#part-ii-tactic-ring-lean" title="Permalink to this headline">¶</a></h1>
+<p>Let me just try and read this code from top to bottom.</p>
+<div class="highlight-lean"><div class="highlight"><pre>/-
+Copyright (c) 2018 Mario Carneiro. All rights reserved.
+Released under Apache 2.0 license as described in the file LICENSE.
+Authors: Mario Carneiro
+
+Evaluate expressions in the language of (semi-)rings.
+Based on http://www.cs.ru.nl/~freek/courses/tt-2014/read/10.1.1.61.3041.pdf .
+-/
+import algebra.group_power tactic.norm_num
+
+universes u v w
+open tactic
+
+def horner {α} [comm_semiring α] (a x : α) (n : ℕ) (b : α) := a * x ^ n + b
+</pre></div>
+</div>
+<p>No surprises so far. Note that the type of <code class="docutils literal"><span class="pre">α</span></code> is being inferred by type class inference here (using <code class="docutils literal"><span class="pre">comm_semiring</span></code> I guess). Rather than focussing on this <code class="docutils literal"><span class="pre">horner</span></code> definition, let me mention here that if <code class="docutils literal"><span class="pre">horner</span></code> is ever used then Lean might find itself having to cook up <code class="docutils literal"><span class="pre">α</span> <span class="pre">:</span> <span class="pre">Type</span> <span class="pre">u</span></code> for some universe <code class="docutils literal"><span class="pre">u</span></code> (which the unifier (I think) will try to do, using the types of the inputs <code class="docutils literal"><span class="pre">a,</span> <span class="pre">x,</span> <span class="pre">b</span></code>), and <code class="docutils literal"><span class="pre">H</span> <span class="pre">:</span> <span class="pre">comm_semiring</span> <span class="pre">α</span></code>, which it would try and do using typeclass inference.</p>
+<div class="highlight-lean"><div class="highlight"><pre><span class="kn">namespace</span> <span class="n">tactic</span>
+<span class="kn">namespace</span> <span class="n">ring</span>
+
+<span class="n">meta</span> <span class="kn">structure</span> <span class="n">cache</span> <span class="o">:=</span>
+<span class="o">(</span><span class="n">α</span> <span class="o">:</span> <span class="n">expr</span><span class="o">)</span>
+<span class="o">(</span><span class="n">univ</span> <span class="o">:</span> <span class="n">level</span><span class="o">)</span>
+<span class="o">(</span><span class="n">comm_semiring_inst</span> <span class="o">:</span> <span class="n">expr</span><span class="o">)</span>
+</pre></div>
+</div>
+<p>Here&#8217;s the first hint that we are dealing with tactics here. The structure <code class="docutils literal"><span class="pre">tactic.ring.cache</span></code> (which you can inspect in Lean if you <code class="docutils literal"><span class="pre">import</span> <span class="pre">tactic.ring</span></code>) looks like a normal structure, but it&#8217;s using types which we may have never heard of. If you remove the <code class="docutils literal"><span class="pre">meta</span></code> you&#8217;ll see why &#8211; the types <code class="docutils literal"><span class="pre">expr</span></code> and <code class="docutils literal"><span class="pre">level</span></code> are &#8220;untrusted&#8221;. Untrusted code has access to goals and might even be able to just change them randomly &#8211; is this right? These untrusted types &#8211; <code class="docutils literal"><span class="pre">level</span></code> is supposed to represent a universe level, and <code class="docutils literal"><span class="pre">expr</span></code> is a general Lean expression like <code class="docutils literal"><span class="pre">2</span></code> or <code class="docutils literal"><span class="pre">2+2=4</span></code> or <code class="docutils literal"><span class="pre">ℕ</span></code> &#8211; there are <code class="docutils literal"><span class="pre">expr</span></code> versions of all of these things. Chapter 3 of <a class="reference external" href="https://leanprover.github.io/reference/expressions.html">the Lean reference manual</a> documents levels and exprs formally, and of course you can right click on these things to see their definitions as inductive types.</p>
+<p>Note that evem though <code class="docutils literal"><span class="pre">α</span></code> and <code class="docutils literal"><span class="pre">comm_semiring_inst</span></code> both have type <code class="docutils literal"><span class="pre">expr</span></code> one can&#8217;t help but wonder whether one of them will represent the <code class="docutils literal"><span class="pre">α</span></code> in <code class="docutils literal"><span class="pre">horner</span></code> and the other will represent the proof that <code class="docutils literal"><span class="pre">α</span></code> is a commutative semiring. Note that there is no type checking here &#8211; everything is an <code class="docutils literal"><span class="pre">expr</span></code>.</p>
+<div class="highlight-lean"><div class="highlight"><pre>meta def mk_cache (e : expr) : tactic cache :=
+do α ← infer_type e,
+   c ← mk_app ``comm_semiring [α] &gt;&gt;= mk_instance,
+   u ← mk_meta_univ,
+   infer_type α &gt;&gt;= unify (expr.sort (level.succ u)),
+   u ← get_univ_assignment u,
+   return ⟨α, u, c⟩
+</pre></div>
+</div>
+<p>OK so this definition is <code class="docutils literal"><span class="pre">meta</span></code> because it mentions the <code class="docutils literal"><span class="pre">tactic</span></code> type, which is untrusted (and because it&#8217;s full of <code class="docutils literal"><span class="pre">expr</span></code> s). But it&#8217;s not hard to figure out what this code must be doing. We go into monad mode with <code class="docutils literal"><span class="pre">do</span></code> and now we find ourselves writing procedural code in funny notation, with arrows instead of <code class="docutils literal"><span class="pre">:=</span></code> or <code class="docutils literal"><span class="pre">=</span></code>. So <code class="docutils literal"><span class="pre">e</span></code> has type <code class="docutils literal"><span class="pre">expr</span></code> so it represents some Lean term, and this term should have a type. The first line after the <code class="docutils literal"><span class="pre">do</span></code> lets <code class="docutils literal"><span class="pre">α</span></code> be the type of <code class="docutils literal"><span class="pre">e</span></code>. This looks different to how we talk about types in normal mode, but it&#8217;s because <code class="docutils literal"><span class="pre">e</span></code> is an <code class="docutils literal"><span class="pre">expr</span></code> which is a pretty primtive object, and there are specialised functions doing basic things with <code class="docutils literal"><span class="pre">expr</span></code> s with exotic names like <code class="docutils literal"><span class="pre">infer_type</span></code>. These fancy functions are in core lean and many if not all of them are documented &#8211; if you hover over <code class="docutils literal"><span class="pre">infer_type</span></code> then you see it sends <code class="docutils literal"><span class="pre">expr</span></code> to <code class="docutils literal"><span class="pre">tactic</span> <span class="pre">expr</span></code> and brief docs. If you want a bit of a shock then right-clock on infer_type and look at its definition [hint: its actual definition is written in C++ I think]</p>
+<p>The fact that <code class="docutils literal"><span class="pre">infer_type</span></code> is returning a <code class="docutils literal"><span class="pre">tactic</span> <span class="pre">expr</span></code> and not an <code class="docutils literal"><span class="pre">expr</span></code> is why we have to use the arrow &#8211; we think of <code class="docutils literal"><span class="pre">α</span></code> but really it&#8217;s <code class="docutils literal"><span class="pre">some</span> <span class="pre">α</span></code> (or <code class="docutils literal"><span class="pre">return</span> <span class="pre">α</span></code>, as the tactic monad sometimes refers to it).</p>
+<p>After our definition of <code class="docutils literal"><span class="pre">α</span></code> we have a definition of <code class="docutils literal"><span class="pre">c</span></code>, which seems to ask the type class inference system for an instance of <code class="docutils literal"><span class="pre">comm_semiring</span> <span class="pre">α</span></code> and then lets <code class="docutils literal"><span class="pre">c</span></code> be the answer. Note that this could fail, in which case our definition is just going to return <code class="docutils literal"><span class="pre">none</span></code> and possibly set some variable equal to a helpful error message explaining why we failed. The reason <code class="docutils literal"><span class="pre">comm_semiring</span></code> is taking a list rather than just  <code class="docutils literal"><span class="pre">α</span></code> is because we are borrowing it from term mode within monad mode, and when we lift it in with those two backticks it wants to take just one input, namely a list of all the inputs which it would have had in term mode. In term mode one can write <code class="docutils literal"><span class="pre">_</span></code> &#8211; in monad mode one just uses <code class="docutils literal"><span class="pre">none</span></code> as the corresponding entry in the list, because the list is actually a list of <code class="docutils literal"><span class="pre">option</span> <span class="pre">expr</span></code> s. See p33 (section 8.2) of <a href="#id3"><span class="problematic" id="id4">`</span></a>Programming In Lean.</p>
+<p>We then define <code class="docutils literal"><span class="pre">u</span></code> to be a new universe, and then we seem to be making sure that the type of <code class="docutils literal"><span class="pre">α</span></code> is <code class="docutils literal"><span class="pre">Sort</span> <span class="pre">(u+1)</span></code>. This messes with <code class="docutils literal"><span class="pre">u</span></code> a bit so we then redefine <code class="docutils literal"><span class="pre">u</span></code> to be the universe it now wants to be (note: we just defined <code class="docutils literal"><span class="pre">u</span></code> twice here &#8211; this is normal in python but not possible in functional programming &#8211; but there is something clever going on in monad mode here that lets us do it).</p>
+<p>Once we have <code class="docutils literal"><span class="pre">⟨α,</span> <span class="pre">u,</span> <span class="pre">c⟩</span></code> set up to our satisfaction, we then create our instance of <code class="docutils literal"><span class="pre">tactic.ring.cache</span></code> a.k.a. <code class="docutils literal"><span class="pre">cache</span></code>, and return it via the <code class="docutils literal"><span class="pre">return</span></code> command, which ensures it ends up as type <code class="docutils literal"><span class="pre">tactic</span> <span class="pre">cache</span></code>.</p>
+<div class="highlight-lean"><div class="highlight"><pre>meta def cache.cs_app (c : cache) (n : name) : list expr → expr :=
+(@expr.const tt n [c.univ] c.α c.comm_semiring_inst).mk_app
+
+meta inductive destruct_ty : Type
+| const : ℚ → destruct_ty
+| xadd : expr → expr → expr → ℕ → expr → destruct_ty
+open destruct_ty
+
+meta def destruct (e : expr) : option destruct_ty :=
+match expr.to_rat e with
+| some n := some $ const n
+| none := match e with
+  | `(horner %%a %%x %%n %%b) :=
+    do n&#39; ← expr.to_nat n,
+       some (xadd a x n n&#39; b)
+  | _ := none
+  end
+end
+
+meta def normal_form_to_string : expr → string
+| e := match destruct e with
+  | some (const n) := to_string n
+  | some (xadd a x _ n b) :=
+    &quot;(&quot; ++ normal_form_to_string a ++ &quot;) * (&quot; ++ to_string x ++ &quot;)^&quot;
+        ++ to_string n ++ &quot; + &quot; ++ normal_form_to_string b
+  | none := to_string e
+  end
+
+theorem zero_horner {α} [comm_semiring α] (x n b) :
+  @horner α _ 0 x n b = b :=
+by simp [horner]
+
+theorem horner_horner {α} [comm_semiring α] (a₁ x n₁ n₂ b n&#39;)
+  (h : n₁ + n₂ = n&#39;) :
+  @horner α _ (horner a₁ x n₁ 0) x n₂ b = horner a₁ x n&#39; b :=
+by simp [h.symm, horner, pow_add, mul_assoc]
+
+meta def refl_conv (e : expr) : tactic (expr × expr) :=
+do p ← mk_eq_refl e, return (e, p)
+
+meta def trans_conv (t₁ t₂ : expr → tactic (expr × expr)) (e : expr) :
+  tactic (expr × expr) :=
+(do (e₁, p₁) ← t₁ e,
+  (do (e₂, p₂) ← t₂ e₁,
+    p ← mk_eq_trans p₁ p₂, return (e₂, p)) &lt;|&gt;
+  return (e₁, p₁)) &lt;|&gt; t₂ e
+
+meta def eval_horner (c : cache) (a x n b : expr) : tactic (expr × expr) :=
+do d ← destruct a, match d with
+| const q := if q = 0 then
+    return (b, c.cs_app ``zero_horner [x, n, b])
+  else refl_conv $ c.cs_app ``horner [a, x, n, b]
+| xadd a₁ x₁ n₁ _ b₁ :=
+  if x₁ = x ∧ b₁.to_nat = some 0 then do
+    (n&#39;, h) ← mk_app ``has_add.add [n₁, n] &gt;&gt;= norm_num,
+    return (c.cs_app ``horner [a₁, x, n&#39;, b],
+      c.cs_app ``horner_horner [a₁, x, n₁, n, b, n&#39;, h])
+  else refl_conv $ c.cs_app ``horner [a, x, n, b]
+end
+
+theorem const_add_horner {α} [comm_semiring α] (k a x n b b&#39;) (h : k + b = b&#39;   ) :
+  k + @horner α _ a x n b = horner a x n b&#39; :=
+by simp [h.symm, horner]
+
+theorem horner_add_const {α} [comm_semiring α] (a x n b k b&#39;) (h : b + k = b&#39;   ) :
+  @horner α _ a x n b + k = horner a x n b&#39; :=
+by simp [h.symm, horner]
+
+theorem horner_add_horner_lt {α} [comm_semiring α] (a₁ x n₁ b₁ a₂ n₂ b₂ k b&#39;)
+  (h₁ : n₁ + k = n₂) (h₂ : b₁ + b₂ = b&#39;) :
+  @horner α _ a₁ x n₁ b₁ + horner a₂ x n₂ b₂ = horner (horner a₂ x k a₁) x n₁    b&#39; :=
+by simp [h₂.symm, h₁.symm, horner, pow_add, mul_add, mul_comm, mul_left_comm]
+
+theorem horner_add_horner_gt {α} [comm_semiring α] (a₁ x n₁ b₁ a₂ n₂ b₂ k b&#39;)
+  (h₁ : n₂ + k = n₁) (h₂ : b₁ + b₂ = b&#39;) :
+  @horner α _ a₁ x n₁ b₁ + horner a₂ x n₂ b₂ = horner (horner a₁ x k a₂) x n₂    b&#39; :=
+by simp [h₂.symm, h₁.symm, horner, pow_add, mul_add, mul_comm, mul_left_comm]
+
+theorem horner_add_horner_eq {α} [comm_semiring α] (a₁ x n b₁ a₂ b₂ a&#39; b&#39; t)
+  (h₁ : a₁ + a₂ = a&#39;) (h₂ : b₁ + b₂ = b&#39;) (h₃ : horner a&#39; x n b&#39; = t) :
+  @horner α _ a₁ x n b₁ + horner a₂ x n b₂ = t :=
+by simp [h₃.symm, h₂.symm, h₁.symm, horner, add_mul, mul_comm]
+
+meta def eval_add (c : cache) : expr → expr → tactic (expr × expr)
+| e₁ e₂ := do d₁ ← destruct e₁, d₂ ← destruct e₂,
+match d₁, d₂ with
+| const n₁, const n₂ :=
+  mk_app ``has_add.add [e₁, e₂] &gt;&gt;= norm_num
+| const k, xadd a x n _ b :=
+  if k = 0 then do
+    p ← mk_app ``zero_add [e₂],
+    return (e₂, p) else do
+  (b&#39;, h) ← eval_add e₁ b,
+  return (c.cs_app ``horner [a, x, n, b&#39;],
+    c.cs_app ``const_add_horner [e₁, a, x, n, b, b&#39;, h])
+| xadd a x n _ b, const k :=
+  if k = 0 then do
+    p ← mk_app ``add_zero [e₁],
+    return (e₁, p) else do
+  (b&#39;, h) ← eval_add b e₂,
+  return (c.cs_app ``horner [a, x, n, b&#39;],
+    c.cs_app ``horner_add_const [a, x, n, b, e₂, b&#39;, h])
+| xadd a₁ x₁ en₁ n₁ b₁, xadd a₂ x₂ en₂ n₂ b₂ :=
+  if expr.lex_lt x₁ x₂ then do
+    (b&#39;, h) ← eval_add b₁ e₂,
+    return (c.cs_app ``horner [a₁, x₁, en₁, b&#39;],
+      c.cs_app ``horner_add_const [a₁, x₁, en₁, b₁, e₂, b&#39;, h])
+  else if x₁ ≠ x₂ then do
+    (b&#39;, h) ← eval_add e₁ b₂,
+    return (c.cs_app ``horner [a₂, x₂, en₂, b&#39;],
+      c.cs_app ``const_add_horner [e₁, a₂, x₂, en₂, b₂, b&#39;, h])
+  else if n₁ &lt; n₂ then do
+    k ← expr.of_nat (expr.const `nat []) (n₂ - n₁),
+    (_, h₁) ← mk_app ``has_add.add [en₁, k] &gt;&gt;= norm_num,
+    (b&#39;, h₂) ← eval_add b₁ b₂,
+    return (c.cs_app ``horner [c.cs_app ``horner [a₂, x₁, k, a₁], x₁, en₁, b&#39;   ],
+      c.cs_app ``horner_add_horner_lt [a₁, x₁, en₁, b₁, a₂, en₂, b₂, k, b&#39;, h   ₁, h₂])
+  else if n₁ ≠ n₂ then do
+    k ← expr.of_nat (expr.const `nat []) (n₁ - n₂),
+    (_, h₁) ← mk_app ``has_add.add [en₂, k] &gt;&gt;= norm_num,
+    (b&#39;, h₂) ← eval_add b₁ b₂,
+    return (c.cs_app ``horner [c.cs_app ``horner [a₁, x₁, k, a₂], x₁, en₂, b&#39;   ],
+      c.cs_app ``horner_add_horner_gt [a₁, x₁, en₁, b₁, a₂, en₂, b₂, k, b&#39;, h   ₁, h₂])
+  else do
+    (a&#39;, h₁) ← eval_add a₁ a₂,
+    (b&#39;, h₂) ← eval_add b₁ b₂,
+    (t, h₃) ← eval_horner c a&#39; x₁ en₁ b&#39;,
+    return (t, c.cs_app ``horner_add_horner_eq
+      [a₁, x₁, en₁, b₁, a₂, b₂, a&#39;, b&#39;, t, h₁, h₂, h₃])
+end
+
+theorem horner_neg {α} [comm_ring α] (a x n b a&#39; b&#39;)
+  (h₁ : -a = a&#39;) (h₂ : -b = b&#39;) :
+  -@horner α _ a x n b = horner a&#39; x n b&#39; :=
+by simp [h₂.symm, h₁.symm, horner]
+
+meta def eval_neg (c : cache) : expr → tactic (expr × expr) | e :=
+do d ← destruct e, match d with
+| const _ :=
+  mk_app ``has_neg.neg [e] &gt;&gt;= norm_num
+| xadd a x n _ b := do
+  (a&#39;, h₁) ← eval_neg a,
+  (b&#39;, h₂) ← eval_neg b,
+  p ← mk_app ``horner_neg [a, x, n, b, a&#39;, b&#39;, h₁, h₂],
+  return (c.cs_app ``horner [a&#39;, x, n, b&#39;], p)
+end
+
+theorem horner_const_mul {α} [comm_semiring α] (c a x n b a&#39; b&#39;)
+  (h₁ : c * a = a&#39;) (h₂ : c * b = b&#39;) :
+  c * @horner α _ a x n b = horner a&#39; x n b&#39; :=
+by simp [h₂.symm, h₁.symm, horner, mul_add, mul_assoc]
+
+theorem horner_mul_const {α} [comm_semiring α] (a x n b c a&#39; b&#39;)
+  (h₁ : a * c = a&#39;) (h₂ : b * c = b&#39;) :
+  @horner α _ a x n b * c = horner a&#39; x n b&#39; :=
+by simp [h₂.symm, h₁.symm, horner, add_mul, mul_right_comm]
+
+meta def eval_const_mul (c : cache) (k : expr) : expr → tactic (expr × expr)    | e :=
+do d ← destruct e, match d with
+| const _ :=
+  mk_app ``has_mul.mul [k, e] &gt;&gt;= norm_num
+| xadd a x n _ b := do
+  (a&#39;, h₁) ← eval_const_mul a,
+  (b&#39;, h₂) ← eval_const_mul b,
+  return (c.cs_app ``horner [a&#39;, x, n, b&#39;],
+    c.cs_app ``horner_const_mul [k, a, x, n, b, a&#39;, b&#39;, h₁, h₂])
+end
+
+theorem horner_mul_horner_zero {α} [comm_semiring α] (a₁ x n₁ b₁ a₂ n₂ aa t)
+  (h₁ : @horner α _ a₁ x n₁ b₁ * a₂ = aa)
+  (h₂ : horner aa x n₂ 0 = t) :
+  horner a₁ x n₁ b₁ * horner a₂ x n₂ 0 = t :=
+by rw [← h₂, ← h₁];
+   simp [horner, mul_add, mul_comm, mul_left_comm, mul_assoc]
+
+theorem horner_mul_horner {α} [comm_semiring α]
+  (a₁ x n₁ b₁ a₂ n₂ b₂ aa haa ab bb t)
+  (h₁ : @horner α _ a₁ x n₁ b₁ * a₂ = aa)
+  (h₂ : horner aa x n₂ 0 = haa)
+  (h₃ : a₁ * b₂ = ab) (h₄ : b₁ * b₂ = bb)
+  (H : haa + horner ab x n₁ bb = t) :
+  horner a₁ x n₁ b₁ * horner a₂ x n₂ b₂ = t :=
+by rw [← H, ← h₂, ← h₁, ← h₃, ← h₄];
+   simp [horner, mul_add, mul_comm, mul_left_comm, mul_assoc]
+
+meta def eval_mul (c : cache) : expr → expr → tactic (expr × expr)
+| e₁ e₂ := do d₁ ← destruct e₁, d₂ ← destruct e₂,
+match d₁, d₂ with
+| const n₁, const n₂ :=
+  mk_app ``has_mul.mul [e₁, e₂] &gt;&gt;= norm_num
+| const n₁, _ :=
+  if n₁ = 0 then do
+    α0 ← expr.of_nat c.α 0,
+    p ← mk_app ``zero_mul [e₂],
+    return (α0, p) else
+  if n₁ = 1 then do
+    p ← mk_app ``one_mul [e₂],
+    return (e₂, p) else
+  eval_const_mul c e₁ e₂
+| _, const _ := do
+  p₁ ← mk_app ``mul_comm [e₁, e₂],
+  (e&#39;, p₂) ← eval_mul e₂ e₁,
+  p ← mk_eq_trans p₁ p₂, return (e&#39;, p)
+| xadd a₁ x₁ en₁ n₁ b₁, xadd a₂ x₂ en₂ n₂ b₂ :=
+  if expr.lex_lt x₁ x₂ then do
+    (a&#39;, h₁) ← eval_mul a₁ e₂,
+    (b&#39;, h₂) ← eval_mul b₁ e₂,
+    return (c.cs_app ``horner [a&#39;, x₁, en₁, b&#39;],
+      c.cs_app ``horner_mul_const [a₁, x₁, en₁, b₁, e₂, a&#39;, b&#39;, h₁, h₂])
+  else if x₁ ≠ x₂ then do
+    (a&#39;, h₁) ← eval_mul e₁ a₂,
+    (b&#39;, h₂) ← eval_mul e₁ b₂,
+    return (c.cs_app ``horner [a&#39;, x₂, en₂, b&#39;],
+      c.cs_app ``horner_const_mul [e₁, a₂, x₂, en₂, b₂, a&#39;, b&#39;, h₁, h₂])
+  else do
+    (aa, h₁) ← eval_mul e₁ a₂,
+    α0 ← expr.of_nat c.α 0,
+    (haa, h₂) ← eval_horner c aa x₁ en₂ α0,
+    if b₂.to_nat = some 0 then do
+      return (haa, c.cs_app ``horner_mul_horner_zero
+        [a₁, x₁, en₁, b₁, a₂, en₂, aa, haa, h₁, h₂])
+    else do
+      (ab, h₃) ← eval_mul a₁ b₂,
+      (bb, h₄) ← eval_mul b₁ b₂,
+      (t, H) ← eval_add c haa (c.cs_app ``horner [ab, x₁, en₁, bb]),
+      return (t, c.cs_app ``horner_mul_horner
+        [a₁, x₁, en₁, b₁, a₂, en₂, b₂, aa, haa, ab, bb, t, h₁, h₂, h₃, h₄, H]   )
+end
+
+theorem horner_pow {α} [comm_semiring α] (a x n m n&#39; a&#39;)
+  (h₁ : n * m = n&#39;) (h₂ : a ^ m = a&#39;) :
+  @horner α _ a x n 0 ^ m = horner a&#39; x n&#39; 0 :=
+by simp [h₁.symm, h₂.symm, horner, mul_pow, pow_mul]
+
+meta def eval_pow (c : cache) : expr → nat → tactic (expr × expr)
+| e 0 := do
+  α1 ← expr.of_nat c.α 1,
+  p ← mk_app ``pow_zero [e],
+  return (α1, p)
+| e 1 := do
+  p ← mk_app ``pow_one [e],
+  return (e, p)
+| e m := do d ← destruct e,
+  let N : expr := expr.const `nat [],
+  match d with
+  | const _ := do
+    e₂ ← expr.of_nat N m,
+    mk_app ``monoid.pow [e, e₂] &gt;&gt;= norm_num.derive
+  | xadd a x n _ b := match b.to_nat with
+    | some 0 := do
+      e₂ ← expr.of_nat N m,
+      (n&#39;, h₁) ← mk_app ``has_mul.mul [n, e₂] &gt;&gt;= norm_num,
+      (a&#39;, h₂) ← eval_pow a m,
+      α0 ← expr.of_nat c.α 0,
+      return (c.cs_app ``horner [a&#39;, x, n&#39;, α0],
+        c.cs_app ``horner_pow [a, x, n, e₂, n&#39;, a&#39;, h₁, h₂])
+    | _ := do
+      e₂ ← expr.of_nat N (m-1),
+      l ← mk_app ``monoid.pow [e, e₂],
+      (tl, hl) ← eval_pow e (m-1),
+      (t, p₂) ← eval_mul c tl e,
+      hr ← mk_eq_refl e,
+      p₂ ← mk_app ``norm_num.subst_into_prod [l, e, tl, e, t, hl, hr, p₂],
+      p₁ ← mk_app ``pow_succ&#39; [e, e₂],
+      p ← mk_eq_trans p₁ p₂,
+      return (t, p)
+    end
+  end
+
+theorem horner_atom {α} [comm_semiring α] (x : α) : x = horner 1 x 1 0 :=
+by simp [horner]
+
+lemma subst_into_neg {α} [has_neg α] (a ta t : α) (pra : a = ta) (prt : -ta =    t) : -a = t :=
+by simp [pra, prt]
+
+meta def eval_atom (c : cache) (e : expr) : tactic (expr × expr) :=
+do α0 ← expr.of_nat c.α 0,
+   α1 ← expr.of_nat c.α 1,
+   n1 ← expr.of_nat (expr.const `nat []) 1,
+   return (c.cs_app ``horner [α1, e, n1, α0], c.cs_app ``horner_atom [e])
+
+lemma subst_into_pow {α} [monoid α] (l r tl tr t)
+  (prl : (l : α) = tl) (prr : (r : ℕ) = tr) (prt : tl ^ tr = t) : l ^ r = t    :=
+by simp [prl, prr, prt]
+
+meta def eval (c : cache) : expr → tactic (expr × expr)
+| `(%%e₁ + %%e₂) := do
+  (e₁&#39;, p₁) ← eval e₁,
+  (e₂&#39;, p₂) ← eval e₂,
+  (e&#39;, p&#39;) ← eval_add c e₁&#39; e₂&#39;,
+  p ← mk_app ``norm_num.subst_into_sum [e₁, e₂, e₁&#39;, e₂&#39;, e&#39;, p₁, p₂, p&#39;],
+  return (e&#39;, p)
+| `(%%e₁ - %%e₂) := do
+  e₂&#39; ← mk_app ``has_neg.neg [e₂],
+  mk_app ``has_add.add [e₁, e₂&#39;] &gt;&gt;= eval
+| `(- %%e) := do
+  (e₁, p₁) ← eval e,
+  (e₂, p₂) ← eval_neg c e₁,
+  p ← mk_app ``subst_into_neg [e, e₁, e₂, p₁, p₂],
+  return (e₂, p)
+| `(%%e₁ * %%e₂) := do
+  (e₁&#39;, p₁) ← eval e₁,
+  (e₂&#39;, p₂) ← eval e₂,
+  (e&#39;, p&#39;) ← eval_mul c e₁&#39; e₂&#39;,
+  p ← mk_app ``norm_num.subst_into_prod [e₁, e₂, e₁&#39;, e₂&#39;, e&#39;, p₁, p₂, p&#39;],
+  return (e&#39;, p)
+| e@`(has_inv.inv %%_) := (do
+    (e&#39;, p) ← norm_num.derive e,
+    e&#39;.to_rat,
+    return (e&#39;, p)) &lt;|&gt; eval_atom c e
+| e@`(%%e₁ / %%e₂) := do
+  e₂&#39; ← mk_app ``has_inv.inv [e₂],
+  mk_app ``has_mul.mul [e₁, e₂&#39;] &gt;&gt;= eval
+| e@`(%%e₁ ^ %%e₂) := do
+  (e₂&#39;, p₂) ← eval e₂,
+  match e₂&#39;.to_nat with
+  | none := eval_atom c e
+  | some k := do
+    (e₁&#39;, p₁) ← eval e₁,
+    (e&#39;, p&#39;) ← eval_pow c e₁&#39; k,
+    p ← mk_app ``subst_into_pow [e₁, e₂, e₁&#39;, e₂&#39;, e&#39;, p₁, p₂, p&#39;],
+    return (e&#39;, p)
+  end
+| e := match e.to_nat with
+  | some _ := refl_conv e
+  | none := eval_atom c e
+  end
+
+theorem horner_def&#39; {α} [comm_semiring α] (a x n b) : @horner α _ a x n b = x    ^ n * a + b :=
+by simp [horner, mul_comm]
+
+theorem mul_assoc_rev {α} [semigroup α] (a b c : α) : a * (b * c) = a * b * c    :=
+by simp [mul_assoc]
+
+theorem pow_add_rev {α} [monoid α] (a b : α) (m n : ℕ) : a ^ m * a ^ n = a ^    (m + n) :=
+by simp [pow_add]
+
+theorem pow_add_rev_right {α} [monoid α] (a b : α) (m n : ℕ) : b * a ^ m * a    ^ n = b * a ^ (m + n) :=
+by simp [pow_add, mul_assoc]
+
+theorem add_neg_eq_sub {α : Type u} [add_group α] (a b : α) : a + -b = a - b    := rfl
+
+@[derive has_reflect]
+inductive normalize_mode | raw | SOP | horner
+
+meta def normalize (mode := normalize_mode.horner) (e : expr) : tactic (expr    × expr) := do
+pow_lemma ← simp_lemmas.mk.add_simp ``pow_one,
+let lemmas := match mode with
+| normalize_mode.SOP :=
+  [``horner_def&#39;, ``add_zero, ``mul_one, ``mul_add, ``mul_sub,
+   ``mul_assoc_rev, ``pow_add_rev, ``pow_add_rev_right,
+   ``mul_neg_eq_neg_mul_symm, ``add_neg_eq_sub]
+| normalize_mode.horner :=
+  [``horner.equations._eqn_1, ``add_zero, ``one_mul, ``pow_one,
+   ``neg_mul_eq_neg_mul_symm, ``add_neg_eq_sub]
+| _ := []
+end,
+lemmas ← lemmas.mfoldl simp_lemmas.add_simp simp_lemmas.mk,
+(_, e&#39;, pr) ← ext_simplify_core () {}
+  simp_lemmas.mk (λ _, failed) (λ _ _ _ _ e, do
+    c ← mk_cache e,
+    (new_e, pr) ← match mode with
+    | normalize_mode.raw := eval c
+    | normalize_mode.horner := trans_conv (eval c) (simplify lemmas [])
+    | normalize_mode.SOP :=
+      trans_conv (eval c) $
+      trans_conv (simplify lemmas []) $
+      simp_bottom_up&#39; (λ e, norm_num e &lt;|&gt; pow_lemma.rewrite e)
+    end e,
+    guard (¬ new_e =ₐ e),
+    return ((), new_e, some pr, ff))
+   (λ _ _ _ _ _, failed) `eq e,
+return (e&#39;, pr)
+
+end ring
+
+namespace interactive
+open interactive interactive.types lean.parser
+open tactic.ring
+
+local postfix `?`:9001 := optional
+
+/-- Tactic for solving equations in the language of rings.
+  This version of `ring` fails if the target is not an equality
+  that is provable by the axioms of commutative (semi)rings. -/
+meta def ring1 : tactic unit :=
+do `(%%e₁ = %%e₂) ← target,
+  c ← mk_cache e₁,
+  (e₁&#39;, p₁) ← eval c e₁,
+  (e₂&#39;, p₂) ← eval c e₂,
+  is_def_eq e₁&#39; e₂&#39;,
+  p ← mk_eq_symm p₂ &gt;&gt;= mk_eq_trans p₁,
+  tactic.exact p
+
+meta def ring.mode : lean.parser ring.normalize_mode :=
+with_desc &quot;(SOP|raw|horner)?&quot; $
+do mode ← ident?, match mode with
+| none         := return ring.normalize_mode.horner
+| some `horner := return ring.normalize_mode.horner
+| some `SOP    := return ring.normalize_mode.SOP
+| some `raw    := return ring.normalize_mode.raw
+| _            := failed
+end
+
+/-- Tactic for solving equations in the language of rings.
+  Attempts to prove the goal outright if there is no `at`
+  specifier and the target is an equality, but if this
+  fails it falls back to rewriting all ring expressions
+  into a normal form. When writing a normal form,
+  `ring SOP` will use sum-of-products form instead of horner form. -/
+meta def ring (SOP : parse ring.mode) (loc : parse location) : tactic unit :=
+match loc with
+| interactive.loc.ns [none] := ring1
+| _ := failed
+end &lt;|&gt;
+do ns ← loc.get_locals,
+   tt ← tactic.replace_at (normalize SOP) ns loc.include_goal
+      | fail &quot;ring failed to simplify&quot;,
+   when loc.include_goal $ try tactic.reflexivity
+
+end interactive
+end tactic
+
+-- TODO(Mario): fix
+-- example (x : ℤ) : x^3 + x^2 + x = x^3 + (x^2 + x) := by ring
+</pre></div>
+</div>
+</div>
+
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+  <h3><a href="index.html">Table Of Contents</a></h3>
+  <ul>
+<li><a class="reference internal" href="#">How does the <code class="docutils literal"><span class="pre">ring</span></code> tactic work?</a></li>
+<li><a class="reference internal" href="#part-i-the-bare-minimum-about-monad-mode">Part I : the bare minimum about monad mode</a><ul>
+<li><a class="reference internal" href="#the-option-monad">The <cite>option</cite> monad</a></li>
+<li><a class="reference internal" href="#the-tactic-monad">The <cite>tactic</cite> monad</a></li>
+<li><a class="reference internal" href="#writing-a-tactic">Writing a tactic</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#part-ii-tactic-ring-lean">Part II : <code class="docutils literal"><span class="pre">tactic/ring.lean</span></code></a></li>
+</ul>
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="index.html">Documentation overview</a><ul>
+      <li>Previous: <a href="index.html" title="previous chapter">Welcome to lean-docs&#8217;s documentation!</a></li>
+  </ul></li>
+</ul>
+</div>
+  <div role="note" aria-label="source link">
+    <h3>This Page</h3>
+    <ul class="this-page-menu">
+      <li><a href="_sources/ring_tactic.txt"
+            rel="nofollow">Show Source</a></li>
+    </ul>
+   </div>
+<div id="searchbox" style="display: none" role="search">
+  <h3>Quick search</h3>
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &copy;2018, k.buzzard@imperial.ac.uk.
+      
+      |
+      Powered by <a href="http://sphinx-doc.org/">Sphinx 1.3.6</a>
+      &amp; <a href="https://github.com/bitprophet/alabaster">Alabaster 0.7.7</a>
+      
+      |
+      <a href="_sources/ring_tactic.txt"
+          rel="nofollow">Page source</a>
+    </div>
+
+    
+
+    
+  </body>
+</html>
